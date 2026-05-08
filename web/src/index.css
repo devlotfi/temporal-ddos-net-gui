@@ -1,0 +1,158 @@
+@import "tailwindcss";
+@import "@heroui/styles";
+
+@font-face {
+  font-family: "Rubik";
+  font-style: normal;
+  font-display: block;
+  src: url("./assets/Rubik.ttf");
+}
+
+* {
+  font-family: "Rubik", sans-serif;
+  font-optical-sizing: auto;
+  font-style: normal;
+}
+
+@layer components {
+  .card {
+    @apply border border-border;
+  }
+
+  .input-group {
+    @apply border border-border bg-background;
+  }
+
+  .alert {
+    @apply border border-border bg-background;
+  }
+
+  .select__trigger {
+    @apply border border-border bg-background;
+  }
+
+  .toast {
+    @apply border border-border shadow-2xl;
+  }
+
+  .modal__dialog {
+    @apply border border-border bg-surface;
+  }
+
+  .tabs__indicator {
+    @apply bg-accent rounded-2xl;
+  }
+  .tabs__tab[aria-selected="true"] {
+    @apply text-accent-foreground;
+  }
+  .tabs__list {
+    @apply bg-background border border-border;
+  }
+  .tabs__panel {
+    @apply mt-[2rem];
+  }
+
+  .table-root {
+    @apply bg-surface border border-border;
+  }
+  .table__header {
+    @apply bg-surface;
+  }
+}
+
+@layer base {
+  :root {
+    color-scheme: light;
+
+    --spacing: 0.25rem;
+    --radius: 0.3rem;
+
+    --background: #f3f3f3;
+    --foreground: #536077;
+
+    --surface: #ffffff;
+    --surface-foreground: #536077;
+
+    --success: #1dbe63;
+    --success-foreground: var(--snow);
+
+    --danger: #d42326;
+    --danger-foreground: var(--snow);
+
+    --accent: #4088da;
+
+    --border: #e6e6e6;
+    --separator: #c0c4cf;
+
+    --field-background: var(--background);
+    --field-foreground: var(--foreground);
+    --field-placeholder: color-mix(in srgb, var(--muted), transparent 30%);
+    --field-border: var(--border);
+
+    --surface-shadow: 0 0 0 0 transparent inset;
+    --field-shadow: 0 0 0 0 transparent inset;
+  }
+
+  .dark,
+  [data-theme="dark"] {
+    color-scheme: dark;
+
+    --spacing: 0.25rem;
+    --radius: 0.3rem;
+
+    --background: #242d3b;
+    --foreground: #b7bdc9;
+
+    --surface: #2b3747;
+    --surface-foreground: var(--foreground);
+
+    --success: #1dbe63;
+    --success-foreground: var(--snow);
+
+    --danger: #d42326;
+    --danger-foreground: var(--snow);
+
+    --default: #334357;
+    --default-foreground: var(--foreground);
+
+    --overlay: var(--background);
+    --overlay-foreground: var(--foreground);
+
+    --accent: #4088da;
+
+    --border: #3b4558;
+    --separator: #57688d;
+
+    --field-background: var(--surface);
+    --field-foreground: var(--foreground);
+    --field-placeholder: color-mix(in srgb, var(--muted), transparent 30%);
+    --field-border: var(--border);
+
+    --surface-shadow: 0 0 0 0 transparent inset;
+    --field-shadow: 0 0 0 0 transparent inset;
+  }
+}
+
+@keyframes loading-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(150%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}
+
+.animate-loading {
+  animation: loading-slide 1.2s infinite ease-in-out;
+}
+
+@utility bg-main {
+  background-image: radial-gradient(
+    color-mix(in srgb, var(--foreground), transparent 92%) 2px,
+    transparent 2px
+  );
+  background-size: 2rem 2rem;
+}
