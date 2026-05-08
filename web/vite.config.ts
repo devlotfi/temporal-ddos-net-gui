@@ -16,6 +16,9 @@ export default defineConfig({
     }),
     react(),
   ],
+  optimizeDeps: {
+    include: ["react-plotly.js", "plotly.js"],
+  },
   build: {
     outDir: "../docs",
     emptyOutDir: true,
