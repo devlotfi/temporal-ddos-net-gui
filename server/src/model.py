@@ -261,8 +261,12 @@ def compute_scores(model_day: str, data_day: str):
         raise HTTPException(400, f"Unknown validation day: {data_day}. Allowed: {VALIDATION_DAYS}")
     load_artifacts(model_day)
     art = artifacts_cache[model_day]
-    X = pd.read_parquet(DATA_DIR / f"X_timeline_{data_day}.parquet").values.astype(np.float32)
-    df = pd.read_parquet(DATA_DIR / f"df_timeline_{data_day}.parquet")
+    if model_day == data_day:
+        X = pd.read_parquet(DATA_DIR / f"X_timeline_test_{data_day}.parquet").values.astype(np.float32)
+        df = pd.read_parquet(DATA_DIR / f"df_timeline_test_{data_day}.parquet")
+    else:
+        X = pd.read_parquet(DATA_DIR / f"X_timeline_{data_day}.parquet").values.astype(np.float32)
+        df = pd.read_parquet(DATA_DIR / f"df_timeline_{data_day}.parquet")
     X_imp = art["imputer"].transform(X)
     X_clip = np.clip(X_imp, art["clip_lower"], art["clip_upper"])
     X_scaled = art["scaler"].transform(X_clip).astype(np.float32)

@@ -150,15 +150,15 @@ function RouteComponent() {
                 <div className="col-span-2 flex h-[2.5rem] gap-[1rem] items-center">
                   <div className="flex flex-1 h-[1px] bg-separator"></div>
                   <div className="flex text-center text-sm font-semibold">
-                    Predicted
+                    Valeurs prédites
                   </div>
                   <div className="flex flex-1 h-[1px] bg-separator"></div>
                 </div>
 
-                <div className="row-span-3 w-[2.5rem] flex flex-col gap-[1.8rem] items-center">
+                <div className="row-span-3 w-[2.5rem] flex flex-col gap-[3.5rem] items-center">
                   <div className="flex flex-1 w-[1px] bg-separator"></div>
                   <div className="-rotate-90 text-sm font-semibold whitespace-nowrap">
-                    Actual
+                    Valeurs réelles
                   </div>
                   <div className="flex flex-1 w-[1px] bg-separator"></div>
                 </div>
@@ -178,7 +178,7 @@ function RouteComponent() {
                 </div>
 
                 <ConfusionMatrixCell
-                  cell="TP"
+                  cell="TN"
                   tp={data.confusion_raw.TP}
                   fp={data.confusion_raw.FP}
                   tn={data.confusion_raw.TN}
@@ -186,7 +186,7 @@ function RouteComponent() {
                 ></ConfusionMatrixCell>
 
                 <ConfusionMatrixCell
-                  cell="FN"
+                  cell="FP"
                   tp={data.confusion_raw.TP}
                   fp={data.confusion_raw.FP}
                   tn={data.confusion_raw.TN}
@@ -200,7 +200,7 @@ function RouteComponent() {
                 </div>
 
                 <ConfusionMatrixCell
-                  cell="FP"
+                  cell="FN"
                   tp={data.confusion_raw.TP}
                   fp={data.confusion_raw.FP}
                   tn={data.confusion_raw.TN}
@@ -208,7 +208,7 @@ function RouteComponent() {
                 ></ConfusionMatrixCell>
 
                 <ConfusionMatrixCell
-                  cell="TN"
+                  cell="TP"
                   tp={data.confusion_raw.TP}
                   fp={data.confusion_raw.FP}
                   tn={data.confusion_raw.TN}
