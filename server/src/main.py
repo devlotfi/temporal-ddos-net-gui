@@ -26,7 +26,11 @@ async def precompute(model: str = Query(..., description="Model day (03-11-cic20
     if day not in VALIDATION_DAYS:
         raise HTTPException(400, f"Unknown day: {day}. Allowed: {VALIDATION_DAYS}")
     try:
-        compute_scores(model, day)
+        if model == day:
+            compute_scores(model, day, False)
+            compute_scores(model, day, True)
+        else:
+            compute_scores(model, day, False)
     except Exception as e:
         raise HTTPException(500, f"Precomputation failed: {str(e)}")
     return {
@@ -38,70 +42,81 @@ async def precompute(model: str = Query(..., description="Model day (03-11-cic20
 
 @app.post("/predict", response_model=PredictResponse)
 async def predict(model: str = Query(...), day: str = Query(...)):
-    precom, art = get_demo_data(model, day)
-    df = precom["df"]
-    scores = precom["scores_calibrated"]
-    theta = art["theta"]
-    theta_up = art["theta_up"]
-    theta_down = art["theta_down"]
-    k = art["k_consecutive"]
-    smoothing_s = art["smoothing_window_s"]
-    cooldown_s = art["cooldown_s"]
+    def get_data(model: str, day: str, test: bool = False):
+        precom, art = get_demo_data(model, day, test)
+        df = precom["df"]
+        scores = precom["scores_calibrated"]
+        theta = art["theta"]
+        theta_up = art["theta_up"]
+        theta_down = art["theta_down"]
+        k = art["k_consecutive"]
+        smoothing_s = art["smoothing_window_s"]
+        cooldown_s = art["cooldown_s"]
 
-    early = compute_early_metrics(day, scores, theta, theta_up, theta_down,
-                                  k, smoothing_s, cooldown_s, df)
+        early = compute_early_metrics(day, scores, theta, theta_up, theta_down,
+                                    k, smoothing_s, cooldown_s, df)
 
-    preds = (scores >= theta).astype(int)
-    y_raw = df["y_raw_bin"].values if "y_raw_bin" in df.columns else None
+        preds = (scores >= theta).astype(int)
+        y_raw = df["y_raw_bin"].values if "y_raw_bin" in df.columns else None
 
-    # ---- Filtrage selon le jour ----
-    if y_raw is not None:
-        if day in ["02-16-cic2018", "02-21-cic2018"]:
-            # CIC-2018 : utiliser y_raw_known (labels majoritaires)
-            if "y_raw_known" in df.columns:
-                known_mask = df["y_raw_known"].values.astype(bool)
+        # ---- Filtrage selon le jour ----
+        if y_raw is not None:
+            if day in ["02-16-cic2018", "02-21-cic2018"]:
+                # CIC-2018 : utiliser y_raw_known (labels majoritaires)
+                if "y_raw_known" in df.columns:
+                    known_mask = df["y_raw_known"].values.astype(bool)
+                    y_true_filt = y_raw[known_mask]
+                    y_pred_filt = preds[known_mask]
+                else:
+                    y_true_filt = y_raw
+                    y_pred_filt = preds
+            else:
+                # CIC-2019 : retirer les labels inconnus (-1)
+                known_mask = y_raw != -1
                 y_true_filt = y_raw[known_mask]
                 y_pred_filt = preds[known_mask]
+
+            confusion_raw = safe_confusion(y_true_filt, y_pred_filt)
+
+            if len(y_true_filt) > 0:
+                precision = float(precision_score(y_true_filt, y_pred_filt, zero_division=0))
+                recall = float(recall_score(y_true_filt, y_pred_filt, zero_division=0))
+                f1 = float(f1_score(y_true_filt, y_pred_filt, zero_division=0))
             else:
-                y_true_filt = y_raw
-                y_pred_filt = preds
+                precision = recall = f1 = None
         else:
-            # CIC-2019 : retirer les labels inconnus (-1)
-            known_mask = y_raw != -1
-            y_true_filt = y_raw[known_mask]
-            y_pred_filt = preds[known_mask]
-
-        confusion_raw = safe_confusion(y_true_filt, y_pred_filt)
-
-        if len(y_true_filt) > 0:
-            precision = float(precision_score(y_true_filt, y_pred_filt, zero_division=0))
-            recall = float(recall_score(y_true_filt, y_pred_filt, zero_division=0))
-            f1 = float(f1_score(y_true_filt, y_pred_filt, zero_division=0))
-        else:
+            confusion_raw = None
             precision = recall = f1 = None
-    else:
-        confusion_raw = None
-        precision = recall = f1 = None
 
-    return {
-        "model_used": model,
-        "data_day": day,
-        "theta": theta,
-        "scores_calibrated": scores.tolist(),
-        "alerts": early["alerts"].tolist(),
-        "metrics": {
-            "seg_recall": early["seg_recall"],
-            "median_delay_s": early["median_delay_s"],
-            "p90_delay_s": early["p90_delay_s"],
-            "fa_per_min": early["fa_per_min"],
-        },
-        "classification_metrics": {
-            "precision": precision,
-            "recall": recall,
-            "f1": f1
-        },
-        "confusion_raw": confusion_raw,
-    }
+        return {
+            "model_used": model,
+            "data_day": day,
+            "theta": theta,
+            "scores_calibrated": scores.tolist(),
+            "alerts": early["alerts"].tolist(),
+            "metrics": {
+                "seg_recall": early["seg_recall"],
+                "median_delay_s": early["median_delay_s"],
+                "p90_delay_s": early["p90_delay_s"],
+                "fa_per_min": early["fa_per_min"],
+            },
+            "classification_metrics": {
+                "precision": precision,
+                "recall": recall,
+                "f1": f1
+            },
+            "confusion_raw": confusion_raw,
+        }
+    
+    if model == day:
+        data = get_data(model, day, False)
+        data_test = get_data(model, day, True)
+        data["classification_metrics"] = data_test["classification_metrics"]
+        data["confusion_raw"] = data_test["confusion_raw"]
+        return data
+    else:
+        data = get_data(model, day, False)
+        return data
 
 @app.get("/timeline", response_model=TimelineResponse)
 async def timeline(model: str = Query(...), day: str = Query(...)):

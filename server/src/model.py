@@ -256,12 +256,12 @@ def load_artifacts(model_day: str):
         "feature_names": config["feature_names"],
     }
 
-def compute_scores(model_day: str, data_day: str):
+def compute_scores(model_day: str, data_day: str, test: bool = False):
     if data_day not in VALIDATION_DAYS:
         raise HTTPException(400, f"Unknown validation day: {data_day}. Allowed: {VALIDATION_DAYS}")
     load_artifacts(model_day)
     art = artifacts_cache[model_day]
-    if model_day == data_day:
+    if test == True:
         X = pd.read_parquet(DATA_DIR / f"X_timeline_test_{data_day}.parquet").values.astype(np.float32)
         df = pd.read_parquet(DATA_DIR / f"df_timeline_test_{data_day}.parquet")
     else:
@@ -283,17 +283,28 @@ def compute_scores(model_day: str, data_day: str):
         calibrated = cal.predict(scores)
     else:
         calibrated = scores
-    computed_cache[(model_day, data_day)] = {
-        "df": df,
-        "scores_calibrated": np.nan_to_num(calibrated, nan=0.5),
-        "model_day": model_day,
-        "data_day": data_day,
-    }
+    if test == True:
+        computed_cache[(model_day, data_day, True)] = {
+            "df": df,
+            "scores_calibrated": np.nan_to_num(calibrated, nan=0.5),
+            "model_day": model_day,
+            "data_day": data_day,
+        }
+    else:
+        computed_cache[(model_day, data_day)] = {
+            "df": df,
+            "scores_calibrated": np.nan_to_num(calibrated, nan=0.5),
+            "model_day": model_day,
+            "data_day": data_day,
+        }
 
-def get_demo_data(model_day: str, data_day: str):
+def get_demo_data(model_day: str, data_day: str, test: bool = False):
     if data_day not in VALIDATION_DAYS:
         raise HTTPException(400, f"Unknown validation day: {data_day}. Allowed: {VALIDATION_DAYS}")
-    key = (model_day, data_day)
+    if test == True:
+        key = (model_day, data_day, True)
+    else:
+        key = (model_day, data_day)
     data = computed_cache.get(key)
     if data is None:
         raise HTTPException(
