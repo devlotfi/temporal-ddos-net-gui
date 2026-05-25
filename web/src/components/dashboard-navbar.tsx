@@ -1,5 +1,5 @@
 import { Button, Chip, cn } from "@heroui/react";
-import { Computer, Home, Moon, Sun } from "lucide-react";
+import { Home, Laptop, Moon, Sun } from "lucide-react";
 import LogoSVG from "./svg/LogoSVG";
 import { useContext } from "react";
 import { ThemeContext } from "../context/theme-context";
@@ -95,6 +95,11 @@ export default function DashboardNavbar() {
               path="/dashboard/alerts"
               icon="siren"
             ></NavbarNavigationButton>
+            <NavbarNavigationButton
+              title="Simulation"
+              path="/dashboard/simulation"
+              icon="play"
+            ></NavbarNavigationButton>
           </div>
         </div>
 
@@ -102,17 +107,16 @@ export default function DashboardNavbar() {
           <div className="flex flex-col gap-[0.1rem]">
             <Chip
               size="md"
-              className="justify-between bg-background border border-border"
+              className="flex-col bg-background border border-border text-foreground"
             >
-              <div className="flex opacity-80">Modéle:</div>
-              <div className="flex">{search.model}</div>
-            </Chip>
-            <Chip
-              size="md"
-              className="justify-between bg-background border border-border"
-            >
-              <div className="flex opacity-80">Jour de validation:</div>
-              <div className="flex">{search.day}</div>
+              <div className="flex w-full gap-[0.5rem] items-center justify-between">
+                <div className="flex opacity-80">Modéle:</div>
+                <div className="flex">{search.model}</div>
+              </div>
+              <div className="flex w-full gap-[0.5rem] items-center justify-between">
+                <div className="flex opacity-80">Jour de validation:</div>
+                <div className="flex">{search.day}</div>
+              </div>
             </Chip>
           </div>
 
@@ -128,7 +132,7 @@ export default function DashboardNavbar() {
             ) : themeOption === ThemeOptions.DARK ? (
               <Moon className="size-[1.4rem]"></Moon>
             ) : (
-              <Computer className="size-[1.4rem]"></Computer>
+              <Laptop className="size-[1.4rem]"></Laptop>
             )}
           </Button>
         </div>

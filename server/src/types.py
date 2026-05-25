@@ -63,3 +63,19 @@ class TimelineResponse(BaseModel):
     smoothed_scores: List[float]
     segments: List[TimelineSegment]
     alerts: List[TimelineAlert]
+
+class SimulationPoint(BaseModel):
+    timestamp: str
+    score: Optional[float] = None
+    context_start: Optional[str] = None
+    context_end: Optional[str] = None
+
+class SimulationResponse(BaseModel):
+    model_used: str
+    data_day: str
+    points: List[SimulationPoint]
+
+class TimelineBoundsResponse(BaseModel):
+    data_day: str
+    first_timestamp: str
+    last_timestamp: str

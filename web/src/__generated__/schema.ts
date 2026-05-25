@@ -67,6 +67,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/simulate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Simulate */
+        get: operations["simulate_simulate_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/timeline_bounds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Timeline Bounds */
+        get: operations["timeline_bounds_timeline_bounds_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -154,6 +188,26 @@ export interface components {
             classification_metrics: components["schemas"]["ClassificationMetrics"];
             confusion_raw?: components["schemas"]["ConfusionMatrix"] | null;
         };
+        /** SimulationPoint */
+        SimulationPoint: {
+            /** Timestamp */
+            timestamp: string;
+            /** Score */
+            score?: number | null;
+            /** Context Start */
+            context_start?: string | null;
+            /** Context End */
+            context_end?: string | null;
+        };
+        /** SimulationResponse */
+        SimulationResponse: {
+            /** Model Used */
+            model_used: string;
+            /** Data Day */
+            data_day: string;
+            /** Points */
+            points: components["schemas"]["SimulationPoint"][];
+        };
         /** TimelineAlert */
         TimelineAlert: {
             /** Index */
@@ -162,6 +216,15 @@ export interface components {
             timestamp: string;
             /** Score */
             score: number;
+        };
+        /** TimelineBoundsResponse */
+        TimelineBoundsResponse: {
+            /** Data Day */
+            data_day: string;
+            /** First Timestamp */
+            first_timestamp: string;
+            /** Last Timestamp */
+            last_timestamp: string;
         };
         /** TimelineResponse */
         TimelineResponse: {
@@ -328,6 +391,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AlertsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    simulate_simulate_get: {
+        parameters: {
+            query: {
+                /** @description Model day (03-11-cic2019 or 01-12-cic2019) */
+                model: string;
+                /** @description Validation day */
+                day: string;
+                /** @description Start timestamp (ISO format, e.g. '2018-02-21 02:11:08') */
+                start_ts: string;
+                /** @description End timestamp (ISO format, e.g. '2018-02-21 02:33:29') */
+                end_ts: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimulationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    timeline_bounds_timeline_bounds_get: {
+        parameters: {
+            query: {
+                /** @description Validation day */
+                day: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TimelineBoundsResponse"];
                 };
             };
             /** @description Validation Error */

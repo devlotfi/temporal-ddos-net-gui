@@ -13,6 +13,7 @@ import { Route as DashboardRouteRouteImport } from './routes/dashboard/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard/index'
 import { Route as DashboardTimelineRouteImport } from './routes/dashboard/timeline'
+import { Route as DashboardSimulationRouteImport } from './routes/dashboard/simulation'
 import { Route as DashboardAlertsRouteImport } from './routes/dashboard/alerts'
 
 const DashboardRouteRoute = DashboardRouteRouteImport.update({
@@ -35,6 +36,11 @@ const DashboardTimelineRoute = DashboardTimelineRouteImport.update({
   path: '/timeline',
   getParentRoute: () => DashboardRouteRoute,
 } as any)
+const DashboardSimulationRoute = DashboardSimulationRouteImport.update({
+  id: '/simulation',
+  path: '/simulation',
+  getParentRoute: () => DashboardRouteRoute,
+} as any)
 const DashboardAlertsRoute = DashboardAlertsRouteImport.update({
   id: '/alerts',
   path: '/alerts',
@@ -45,12 +51,14 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRouteRouteWithChildren
   '/dashboard/alerts': typeof DashboardAlertsRoute
+  '/dashboard/simulation': typeof DashboardSimulationRoute
   '/dashboard/timeline': typeof DashboardTimelineRoute
   '/dashboard/': typeof DashboardIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/dashboard/alerts': typeof DashboardAlertsRoute
+  '/dashboard/simulation': typeof DashboardSimulationRoute
   '/dashboard/timeline': typeof DashboardTimelineRoute
   '/dashboard': typeof DashboardIndexRoute
 }
@@ -59,6 +67,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRouteRouteWithChildren
   '/dashboard/alerts': typeof DashboardAlertsRoute
+  '/dashboard/simulation': typeof DashboardSimulationRoute
   '/dashboard/timeline': typeof DashboardTimelineRoute
   '/dashboard/': typeof DashboardIndexRoute
 }
@@ -68,15 +77,22 @@ export interface FileRouteTypes {
     | '/'
     | '/dashboard'
     | '/dashboard/alerts'
+    | '/dashboard/simulation'
     | '/dashboard/timeline'
     | '/dashboard/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/dashboard/alerts' | '/dashboard/timeline' | '/dashboard'
+  to:
+    | '/'
+    | '/dashboard/alerts'
+    | '/dashboard/simulation'
+    | '/dashboard/timeline'
+    | '/dashboard'
   id:
     | '__root__'
     | '/'
     | '/dashboard'
     | '/dashboard/alerts'
+    | '/dashboard/simulation'
     | '/dashboard/timeline'
     | '/dashboard/'
   fileRoutesById: FileRoutesById
@@ -116,6 +132,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardTimelineRouteImport
       parentRoute: typeof DashboardRouteRoute
     }
+    '/dashboard/simulation': {
+      id: '/dashboard/simulation'
+      path: '/simulation'
+      fullPath: '/dashboard/simulation'
+      preLoaderRoute: typeof DashboardSimulationRouteImport
+      parentRoute: typeof DashboardRouteRoute
+    }
     '/dashboard/alerts': {
       id: '/dashboard/alerts'
       path: '/alerts'
@@ -128,12 +151,14 @@ declare module '@tanstack/react-router' {
 
 interface DashboardRouteRouteChildren {
   DashboardAlertsRoute: typeof DashboardAlertsRoute
+  DashboardSimulationRoute: typeof DashboardSimulationRoute
   DashboardTimelineRoute: typeof DashboardTimelineRoute
   DashboardIndexRoute: typeof DashboardIndexRoute
 }
 
 const DashboardRouteRouteChildren: DashboardRouteRouteChildren = {
   DashboardAlertsRoute: DashboardAlertsRoute,
+  DashboardSimulationRoute: DashboardSimulationRoute,
   DashboardTimelineRoute: DashboardTimelineRoute,
   DashboardIndexRoute: DashboardIndexRoute,
 }

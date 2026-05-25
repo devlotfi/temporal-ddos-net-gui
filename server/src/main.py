@@ -174,3 +174,78 @@ async def list_alerts(model: str = Query(...), day: str = Query(...)):
             "status": status,
         })
     return {"model_used": model, "data_day": day, "alerts": alerts_list}
+
+@app.get("/simulate", response_model=SimulationResponse)
+async def simulate(
+    model: str = Query(..., description="Model day (03-11-cic2019 or 01-12-cic2019)"),
+    day: str = Query(..., description="Validation day"),
+    start_ts: str = Query(..., description="Start timestamp (ISO format, e.g. '2018-02-21 02:11:08')"),
+    end_ts: str = Query(..., description="End timestamp (ISO format, e.g. '2018-02-21 02:33:29')"),
+):
+    precom, art = get_demo_data(model, day)
+    df = precom["df"]
+    scores = precom["scores_calibrated"]
+
+    # Convertir les timestamps
+    try:
+        start_dt = pd.Timestamp(start_ts)
+        end_dt = pd.Timestamp(end_ts)
+    except Exception as e:
+        raise HTTPException(400, f"Invalid timestamp format: {e}")
+
+    # Récupérer la timeline de référence
+    timeline_start = df["window_start"].iloc[0]
+    timeline_end = df["window_start"].iloc[-1]
+
+    # Vérifier que la plage demandée est couverte
+    if start_dt < timeline_start or end_dt > timeline_end:
+        raise HTTPException(
+            400,
+            f"Requested range [{start_ts}, {end_ts}] is outside the available timeline "
+            f"[{timeline_start}, {timeline_end}]"
+        )
+
+    # Calculer les indices de début et de fin
+    start_idx = int((start_dt - timeline_start).total_seconds())
+    end_idx = int((end_dt - timeline_start).total_seconds())
+
+    if start_idx < 0 or end_idx >= len(df):
+        raise HTTPException(400, "Requested range is out of bounds")
+
+    points = []
+    for idx in range(start_idx, end_idx + 1):
+        ts = str(df["window_start"].iloc[idx])
+        point = SimulationPoint(timestamp=ts)
+
+        # Un score est disponible à partir de la SEQ_LEN - 1 (30e seconde)
+        if idx >= SEQ_LEN - 1:
+            point.score = float(scores[idx])
+            point.context_start = str(df["window_start"].iloc[idx - SEQ_LEN + 1])
+            point.context_end = str(df["window_start"].iloc[idx])
+
+        points.append(point)
+
+    return SimulationResponse(
+        model_used=model,
+        data_day=day,
+        points=points,
+    )
+
+@app.get("/timeline_bounds", response_model=TimelineBoundsResponse)
+async def timeline_bounds(day: str = Query(..., description="Validation day")):
+    if day not in VALIDATION_DAYS:
+        raise HTTPException(400, f"Unknown day: {day}. Allowed: {VALIDATION_DAYS}")
+
+    try:
+        df = pd.read_parquet(DATA_DIR / f"df_timeline_{day}.parquet", columns=["window_start"])
+    except FileNotFoundError:
+        raise HTTPException(404, f"Data file for day {day} not found")
+
+    first_ts = str(df["window_start"].min())
+    last_ts = str(df["window_start"].max())
+
+    return TimelineBoundsResponse(
+        data_day=day,
+        first_timestamp=first_ts,
+        last_timestamp=last_ts,
+    )
