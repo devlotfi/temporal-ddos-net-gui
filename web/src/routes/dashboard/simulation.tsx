@@ -43,7 +43,9 @@ function TimelineCell({
 }) {
   return (
     <div className="flex flex-col py-[0.5rem] h-[8rem] min-w-[10rem] max-w-[10rem] bg-surface border border-border rounded-xl">
-      <div className="flex text-[10pt] justify-center">{point.timestamp}</div>
+      <div className="flex text-[13pt] justify-center">
+        {point.timestamp.split(" ")[1]}
+      </div>
       {point.score && isActive ? (
         <div className="flex flex-col flex-1">
           <div className="flex flex-col flex-1 justify-center">
@@ -70,7 +72,7 @@ function TimelineCell({
           )}
         </div>
       ) : isNext ? (
-        <div className="flex flex-1 flex-col justify-center items-center gap-[0.5rem] opacity-70">
+        <div className="flex flex-1 flex-col text-accent justify-center items-center gap-[0.5rem] opacity-70">
           <StepForward className="size-[1.5rem]"></StepForward>
           <div className="flex">Suivant</div>
         </div>
