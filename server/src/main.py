@@ -120,14 +120,12 @@ async def timeline(model: str = Query(...), day: str = Query(...)):
     smoothed = smooth(scores, SMOOTHING_WINDOW_S).tolist()
 
     segments = []
-    if "y_sched" in df.columns:
-        segs = infer_segments_from_y_sched(df)
-        for seg in segs:
-            segments.append(TimelineSegment(
-                name="DoS",
-                start=str(seg["start_ts"]),
-                end=str(seg["end_ts"])
-            ))
+    for seg in get_segments_for_day(day, df):
+        segments.append(TimelineSegment(
+            name=seg["name"],
+            start=str(seg["start_ts"]),
+            end=str(seg["end_ts"])
+        ))
 
     early = compute_early_metrics(day, precom["scores_calibrated"],
                                   art["theta"], art["theta_up"], art["theta_down"],
@@ -160,7 +158,7 @@ async def list_alerts(model: str = Query(...), day: str = Query(...)):
 
     y_sched = get_y_sched(df)           # <-- tolérance
     has_sched = y_sched is not None
-    segments = infer_segments_from_y_sched(df) if has_sched else []
+    segments = get_segments_for_day(day, df) if has_sched else []
 
     alerts_list = []
     for idx in alert_idxs:

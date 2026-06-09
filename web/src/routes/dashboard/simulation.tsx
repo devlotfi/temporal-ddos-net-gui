@@ -204,6 +204,7 @@ function SimulationTimeline({
           >
             {simulation.points.map((point, i) => (
               <TimelineCell
+                key={`${point.timestamp}-i`}
                 point={point}
                 isActive={
                   point !== undefined &&

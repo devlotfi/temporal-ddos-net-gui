@@ -86,7 +86,7 @@ function RouteComponent() {
         type: "scatter",
         fill: "toself",
         mode: "lines",
-        fillcolor: "rgba(255,127,14,0.2)",
+        fillcolor: "#c334eb50",
         line: { width: 0 },
         name: seg.name,
         hoverinfo: "name",

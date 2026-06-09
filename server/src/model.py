@@ -85,6 +85,24 @@ def smooth(y, window=3):
     box = np.ones(window)/window
     return np.convolve(y, box, mode='same')
 
+def get_segments_for_day(day: str, df: pd.DataFrame) -> list[dict]:
+    """
+    Retourne les segments d'attaque pour le jour donné.
+    - Si un schedule officiel existe (ATTACK_SCHEDULE non vide), on l'utilise.
+    - Sinon, on infère à partir de la colonne y_sched.
+    """
+    schedule = ATTACK_SCHEDULE.get(day)
+    if schedule:
+        segments = []
+        for name, start_str, end_str in schedule:
+            segments.append({
+                "name": name,
+                "start_ts": pd.Timestamp(start_str),
+                "end_ts": pd.Timestamp(end_str),
+            })
+        return segments
+    return infer_segments_from_y_sched(df)
+
 def get_y_sched(df: pd.DataFrame) -> Optional[np.ndarray]:
     """
     Renvoie les labels schedule en binaire (0/1) quel que soit le nom de colonne présent.
@@ -129,7 +147,7 @@ def apply_k_consecutive(dec, n_flows, k, cooldown_s, min_flows):
 
 def infer_segments_from_y_sched(df):
     """Retourne la liste des segments d'attaque à partir de y_sched (0/1)."""
-    y_sched = get_y_sched(df)          # <-- idem
+    y_sched = get_y_sched(df)
     if y_sched is None:
         return []
     attack_idx = np.where(y_sched == 1)[0]
@@ -143,6 +161,7 @@ def infer_segments_from_y_sched(df):
             prev = cur
             continue
         segments.append({
+            "name": "DoS",          # ← Nom par défaut pour les jours sans schedule officiel
             "start_ts": df["window_start"].iloc[start],
             "end_ts": df["window_start"].iloc[prev],
             "start_idx": start,
@@ -151,6 +170,7 @@ def infer_segments_from_y_sched(df):
         start = cur
         prev = cur
     segments.append({
+        "name": "DoS",
         "start_ts": df["window_start"].iloc[start],
         "end_ts": df["window_start"].iloc[prev],
         "start_idx": start,
