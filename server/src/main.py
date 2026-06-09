@@ -1,4 +1,3 @@
-
 import numpy as np
 import pandas as pd
 from fastapi import FastAPI, Query, HTTPException
@@ -19,8 +18,7 @@ app.add_middleware(
 )
 
 @app.post("/precompute", response_model=PrecomputeResponse)
-async def precompute(model: str = Query(..., description="Model day (03-11-cic2019 or 01-12-cic2019)"),
-                     day: str = Query(..., description="Validation day")):
+async def precompute(model: str = Query(...), day: str = Query(...)):
     if model not in MODEL_DAYS:
         raise HTTPException(400, f"Unknown model: {model}. Allowed: {MODEL_DAYS}")
     if day not in VALIDATION_DAYS:
@@ -33,12 +31,12 @@ async def precompute(model: str = Query(..., description="Model day (03-11-cic20
             compute_scores(model, day, False)
     except Exception as e:
         raise HTTPException(500, f"Precomputation failed: {str(e)}")
-    return {
-        "status": "ok",
-        "model_used": model,
-        "data_day": day,
-        "message": f"Scores precomputed for model {model} on data {day}"
-    }
+    return PrecomputeResponse(
+        status="ok",
+        model_used=model,
+        data_day=day,
+        message=f"Scores precomputed for model {model} on data {day}"
+    )
 
 @app.post("/predict", response_model=PredictResponse)
 async def predict(model: str = Query(...), day: str = Query(...)):
@@ -54,39 +52,34 @@ async def predict(model: str = Query(...), day: str = Query(...)):
         cooldown_s = art["cooldown_s"]
 
         early = compute_early_metrics(day, scores, theta, theta_up, theta_down,
-                                    k, smoothing_s, cooldown_s, df)
+                                      k, smoothing_s, cooldown_s, df)
 
         preds = (scores >= theta).astype(int)
-        y_raw = df["y_raw_bin"].values if "y_raw_bin" in df.columns else None
 
-        # ---- Filtrage selon le jour ----
+        y_raw = df["y_raw_bin"].values if "y_raw_bin" in df.columns else None
+        is_empty = df["is_empty"].values.astype(bool) if "is_empty" in df.columns else np.zeros(len(df), dtype=bool)
+
+        confusion_raw = None
+        precision = recall = f1 = None
+
         if y_raw is not None:
             if day in ["02-16-cic2018", "02-21-cic2018"]:
-                # CIC-2018 : utiliser y_raw_known (labels majoritaires)
                 if "y_raw_known" in df.columns:
-                    known_mask = df["y_raw_known"].values.astype(bool)
-                    y_true_filt = y_raw[known_mask]
-                    y_pred_filt = preds[known_mask]
+                    known_mask = (df["y_raw_known"].values == 1) & (~is_empty)
                 else:
-                    y_true_filt = y_raw
-                    y_pred_filt = preds
+                    known_mask = ~is_empty
             else:
-                # CIC-2019 : retirer les labels inconnus (-1)
-                known_mask = y_raw != -1
+                # CIC-2019 : labels valides != -1, et non vides
+                known_mask = (y_raw != -1) & (~is_empty)
+
+            if known_mask.any():
                 y_true_filt = y_raw[known_mask]
                 y_pred_filt = preds[known_mask]
-
-            confusion_raw = safe_confusion(y_true_filt, y_pred_filt)
-
-            if len(y_true_filt) > 0:
-                precision = float(precision_score(y_true_filt, y_pred_filt, zero_division=0))
-                recall = float(recall_score(y_true_filt, y_pred_filt, zero_division=0))
-                f1 = float(f1_score(y_true_filt, y_pred_filt, zero_division=0))
-            else:
-                precision = recall = f1 = None
-        else:
-            confusion_raw = None
-            precision = recall = f1 = None
+                confusion_raw = safe_confusion(y_true_filt, y_pred_filt)
+                if len(y_true_filt) > 0:
+                    precision = float(precision_score(y_true_filt, y_pred_filt, zero_division=0))
+                    recall = float(recall_score(y_true_filt, y_pred_filt, zero_division=0))
+                    f1 = float(f1_score(y_true_filt, y_pred_filt, zero_division=0))
 
         return {
             "model_used": model,
@@ -107,16 +100,16 @@ async def predict(model: str = Query(...), day: str = Query(...)):
             },
             "confusion_raw": confusion_raw,
         }
-    
+
     if model == day:
-        data = get_data(model, day, False)
-        data_test = get_data(model, day, True)
+        data = get_data(model, day, test=False)
+        data_test = get_data(model, day, test=True)
         data["classification_metrics"] = data_test["classification_metrics"]
         data["confusion_raw"] = data_test["confusion_raw"]
-        return data
+        return PredictResponse(**data)
     else:
-        data = get_data(model, day, False)
-        return data
+        data = get_data(model, day, test=False)
+        return PredictResponse(**data)
 
 @app.get("/timeline", response_model=TimelineResponse)
 async def timeline(model: str = Query(...), day: str = Query(...)):
@@ -125,24 +118,34 @@ async def timeline(model: str = Query(...), day: str = Query(...)):
     timestamps = df["window_start"].astype(str).tolist()
     scores = precom["scores_calibrated"].tolist()
     smoothed = smooth(scores, SMOOTHING_WINDOW_S).tolist()
-    segments = [{"name": name, "start": start, "end": end}
-                for name, start, end in ATTACK_SCHEDULE.get(day, [])]
+
+    segments = []
+    if "y_sched" in df.columns:
+        segs = infer_segments_from_y_sched(df)
+        for seg in segs:
+            segments.append(TimelineSegment(
+                name="DoS",
+                start=str(seg["start_ts"]),
+                end=str(seg["end_ts"])
+            ))
+
     early = compute_early_metrics(day, precom["scores_calibrated"],
                                   art["theta"], art["theta_up"], art["theta_down"],
                                   art["k_consecutive"], art["smoothing_window_s"],
                                   art["cooldown_s"], df)
-    alert_idxs = np.where(early["alerts"]==1)[0].tolist()
-    alert_data = [{"index": idx, "timestamp": timestamps[idx], "score": scores[idx]}
+    alert_idxs = np.where(early["alerts"] == 1)[0].tolist()
+    alert_data = [TimelineAlert(index=idx, timestamp=timestamps[idx], score=scores[idx])
                   for idx in alert_idxs]
-    return {
-        "model_used": model,
-        "data_day": day,
-        "timestamps": timestamps,
-        "scores": scores,
-        "smoothed_scores": smoothed,
-        "segments": segments,
-        "alerts": alert_data,
-    }
+
+    return TimelineResponse(
+        model_used=model,
+        data_day=day,
+        timestamps=timestamps,
+        scores=scores,
+        smoothed_scores=smoothed,
+        segments=segments,
+        alerts=alert_data,
+    )
 
 @app.get("/alerts", response_model=AlertsResponse)
 async def list_alerts(model: str = Query(...), day: str = Query(...)):
@@ -152,52 +155,52 @@ async def list_alerts(model: str = Query(...), day: str = Query(...)):
     early = compute_early_metrics(day, scores, art["theta"], art["theta_up"],
                                   art["theta_down"], art["k_consecutive"],
                                   art["smoothing_window_s"], art["cooldown_s"], df)
-    alert_idxs = np.where(early["alerts"]==1)[0]
+    alert_idxs = np.where(early["alerts"] == 1)[0]
     timestamps = df["window_start"].values
-    has_sched = "y_sched_bin" in df.columns
-    y_sched = df["y_sched_bin"].values if has_sched else None
+
+    y_sched = get_y_sched(df)           # <-- tolérance
+    has_sched = y_sched is not None
+    segments = infer_segments_from_y_sched(df) if has_sched else []
+
     alerts_list = []
     for idx in alert_idxs:
         ts = pd.Timestamp(timestamps[idx])
         in_attack = (has_sched and y_sched[idx] == 1)
         segment_name = "unknown"
         if has_sched:
-            for name, start_str, end_str in ATTACK_SCHEDULE.get(day, []):
-                if pd.Timestamp(start_str) <= ts <= pd.Timestamp(end_str):
-                    segment_name = name
+            for seg in segments:
+                if seg["start_ts"] <= ts <= seg["end_ts"]:
+                    segment_name = "DoS" if day in ["02-16-cic2018", "02-21-cic2018"] else "Attack"
                     break
         status = "true positive" if in_attack else "false positive" if has_sched else "unlabeled"
-        alerts_list.append({
-            "timestamp": str(timestamps[idx]),
-            "score": float(scores[idx]),
-            "segment": segment_name,
-            "status": status,
-        })
-    return {"model_used": model, "data_day": day, "alerts": alerts_list}
+        alerts_list.append(AlertItem(
+            timestamp=str(timestamps[idx]),
+            score=float(scores[idx]),
+            segment=segment_name,
+            status=status,
+        ))
+    return AlertsResponse(model_used=model, data_day=day, alerts=alerts_list)
 
 @app.get("/simulate", response_model=SimulationResponse)
 async def simulate(
-    model: str = Query(..., description="Model day (03-11-cic2019 or 01-12-cic2019)"),
-    day: str = Query(..., description="Validation day"),
-    start_ts: str = Query(..., description="Start timestamp (ISO format, e.g. '2018-02-21 02:11:08')"),
-    end_ts: str = Query(..., description="End timestamp (ISO format, e.g. '2018-02-21 02:33:29')"),
+    model: str = Query(...),
+    day: str = Query(...),
+    start_ts: str = Query(...),
+    end_ts: str = Query(...),
 ):
-    precom, art = get_demo_data(model, day)
+    precom, _ = get_demo_data(model, day)
     df = precom["df"]
     scores = precom["scores_calibrated"]
 
-    # Convertir les timestamps
     try:
         start_dt = pd.Timestamp(start_ts)
         end_dt = pd.Timestamp(end_ts)
     except Exception as e:
         raise HTTPException(400, f"Invalid timestamp format: {e}")
 
-    # Récupérer la timeline de référence
     timeline_start = df["window_start"].iloc[0]
     timeline_end = df["window_start"].iloc[-1]
 
-    # Vérifier que la plage demandée est couverte
     if start_dt < timeline_start or end_dt > timeline_end:
         raise HTTPException(
             400,
@@ -205,7 +208,6 @@ async def simulate(
             f"[{timeline_start}, {timeline_end}]"
         )
 
-    # Calculer les indices de début et de fin
     start_idx = int((start_dt - timeline_start).total_seconds())
     end_idx = int((end_dt - timeline_start).total_seconds())
 
@@ -216,13 +218,10 @@ async def simulate(
     for idx in range(start_idx, end_idx + 1):
         ts = str(df["window_start"].iloc[idx])
         point = SimulationPoint(timestamp=ts)
-
-        # Un score est disponible à partir de la SEQ_LEN - 1 (30e seconde)
         if idx >= SEQ_LEN - 1:
             point.score = float(scores[idx])
             point.context_start = str(df["window_start"].iloc[idx - SEQ_LEN + 1])
             point.context_end = str(df["window_start"].iloc[idx])
-
         points.append(point)
 
     return SimulationResponse(
@@ -232,20 +231,13 @@ async def simulate(
     )
 
 @app.get("/timeline_bounds", response_model=TimelineBoundsResponse)
-async def timeline_bounds(day: str = Query(..., description="Validation day")):
+async def timeline_bounds(day: str = Query(...)):
     if day not in VALIDATION_DAYS:
         raise HTTPException(400, f"Unknown day: {day}. Allowed: {VALIDATION_DAYS}")
-
     try:
         df = pd.read_parquet(DATA_DIR / f"df_timeline_{day}.parquet", columns=["window_start"])
     except FileNotFoundError:
         raise HTTPException(404, f"Data file for day {day} not found")
-
     first_ts = str(df["window_start"].min())
     last_ts = str(df["window_start"].max())
-
-    return TimelineBoundsResponse(
-        data_day=day,
-        first_timestamp=first_ts,
-        last_timestamp=last_ts,
-    )
+    return TimelineBoundsResponse(data_day=day, first_timestamp=first_ts, last_timestamp=last_ts)

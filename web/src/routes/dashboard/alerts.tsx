@@ -42,7 +42,7 @@ function TableDisplay({
         >
           <Table.Header columns={columns}>
             {(column) => (
-              <Table.Column isRowHeader={column.id === "name"}>
+              <Table.Column isRowHeader={column.id === "Timestasmp"}>
                 {column.name}
               </Table.Column>
             )}

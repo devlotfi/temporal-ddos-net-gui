@@ -1,5 +1,5 @@
 import json
-
+from typing import Optional
 import joblib
 import numpy as np
 import pandas as pd
@@ -9,6 +9,7 @@ from fastapi import HTTPException
 from sklearn.isotonic import IsotonicRegression
 from .config import *
 
+# ---------- Architecture du modèle ----------
 class MultiScaleCNN(nn.Module):
     def __init__(self, n_input_features, n_filters, kernel_sizes, dropout=0.1):
         super().__init__()
@@ -26,6 +27,7 @@ class MultiScaleCNN(nn.Module):
         outs = [branch(x) for branch in self.branches]
         return torch.cat(outs, dim=1).transpose(1, 2)
 
+
 class LearnablePositionalEncoding(nn.Module):
     def __init__(self, d_model, max_len=256, dropout=0.1):
         super().__init__()
@@ -35,6 +37,7 @@ class LearnablePositionalEncoding(nn.Module):
 
     def forward(self, x):
         return self.dropout(x + self.position_embedding[:, :x.size(1), :])
+
 
 class TemporalDDoSNet(nn.Module):
     def __init__(self, n_input_features, seq_len=30, cnn_filters=64, cnn_kernels=[3,5,7],
@@ -74,12 +77,24 @@ class TemporalDDoSNet(nn.Module):
         x = self.transformer(x)
         return self.classification_head(x.mean(dim=1)).squeeze(-1)
 
+
 # ---------- Helpers ----------
 def smooth(y, window=3):
     if window <= 1:
         return np.array(y)
     box = np.ones(window)/window
     return np.convolve(y, box, mode='same')
+
+def get_y_sched(df: pd.DataFrame) -> Optional[np.ndarray]:
+    """
+    Renvoie les labels schedule en binaire (0/1) quel que soit le nom de colonne présent.
+    Cherche d'abord 'y_sched', puis 'y_sched_bin'.
+    """
+    if "y_sched" in df.columns:
+        return df["y_sched"].values
+    if "y_sched_bin" in df.columns:
+        return df["y_sched_bin"].values
+    return None
 
 def hysteresis(smoothed, theta_up, theta_down):
     state = 0
@@ -91,6 +106,7 @@ def hysteresis(smoothed, theta_up, theta_down):
             state = 0
         dec[i] = state
     return dec
+
 
 def apply_k_consecutive(dec, n_flows, k, cooldown_s, min_flows):
     alerts = np.zeros(len(dec), dtype=int)
@@ -110,16 +126,47 @@ def apply_k_consecutive(dec, n_flows, k, cooldown_s, min_flows):
             cnt = 0
     return alerts
 
-def compute_early_metrics(day, scores, theta, theta_up, theta_down,
-                          k, smoothing_s, cooldown_s, df):
+
+def infer_segments_from_y_sched(df):
+    """Retourne la liste des segments d'attaque à partir de y_sched (0/1)."""
+    y_sched = get_y_sched(df)          # <-- idem
+    if y_sched is None:
+        return []
+    attack_idx = np.where(y_sched == 1)[0]
+    if len(attack_idx) == 0:
+        return []
+    segments = []
+    start = attack_idx[0]
+    prev = attack_idx[0]
+    for cur in attack_idx[1:]:
+        if cur - prev <= SCHEDULE_MERGE_GAP_S + 1:
+            prev = cur
+            continue
+        segments.append({
+            "start_ts": df["window_start"].iloc[start],
+            "end_ts": df["window_start"].iloc[prev],
+            "start_idx": start,
+            "end_idx": prev,
+        })
+        start = cur
+        prev = cur
+    segments.append({
+        "start_ts": df["window_start"].iloc[start],
+        "end_ts": df["window_start"].iloc[prev],
+        "start_idx": start,
+        "end_idx": prev,
+    })
+    return segments
+
+
+def compute_early_metrics(day, scores, theta, theta_up, theta_down, k, smoothing_s, cooldown_s, df):
     n_flows = df["n_flows"].values.astype(float)
     smoothed = smooth(scores, smoothing_s)
     dec = hysteresis(smoothed, theta_up, theta_down)
     alerts = apply_k_consecutive(dec, n_flows, k, cooldown_s, MIN_FLOWS_TRIGGER)
 
-    segs = ATTACK_SCHEDULE.get(day, [])
-    has_sched_labels = "y_sched_bin" in df.columns
-    if not segs or not has_sched_labels:
+    y_sched = get_y_sched(df)          # <-- tolérance aux deux noms
+    if y_sched is None:
         return {
             "seg_recall": None,
             "median_delay_s": None,
@@ -128,23 +175,33 @@ def compute_early_metrics(day, scores, theta, theta_up, theta_down,
             "alerts": alerts,
         }
 
-    start_times = pd.to_datetime(df["window_start"])
-    labels = df["y_sched_bin"].values
+    segments = infer_segments_from_y_sched(df)
+    if not segments:
+        return {
+            "seg_recall": None,
+            "median_delay_s": None,
+            "p90_delay_s": None,
+            "fa_per_min": None,
+            "alerts": alerts,
+        }
+    
+    labels = y_sched
     delays = []
     total_seg = 0
     detected_seg = 0
-    for _, seg_start_str, seg_end_str in segs:
-        seg_start = pd.Timestamp(seg_start_str)
-        seg_end = pd.Timestamp(seg_end_str)
-        mask = (start_times >= seg_start) & (start_times <= seg_end) & (labels == 1)
+
+    for seg in segments:
+        start_ts = seg["start_ts"]
+        end_ts = seg["end_ts"]
+        mask = (df["window_start"] >= seg["start_ts"]) & (df["window_start"] <= seg["end_ts"]) & (labels == 1)
         if not mask.any():
             continue
         total_seg += 1
-        det_idx = np.where(mask & (alerts == 1))[0]
-        if len(det_idx) > 0:
+        det_mask = mask & (alerts == 1)
+        if det_mask.any():
             detected_seg += 1
-            first_ts = start_times.iloc[det_idx[0]]
-            delays.append(max(0.0, (first_ts - seg_start).total_seconds()))
+            first_alert_ts = df.loc[det_mask, "window_start"].iloc[0]
+            delays.append(max(0.0, (first_alert_ts - start_ts).total_seconds()))
 
     seg_recall = detected_seg / max(total_seg, 1) if total_seg > 0 else None
     median_delay = float(np.median(delays)) if delays else None
@@ -162,7 +219,14 @@ def compute_early_metrics(day, scores, theta, theta_up, theta_down,
         "alerts": alerts,
     }
 
-def score_timeline(model, X, df, seq_len, max_gap):
+
+def score_timeline(model, X, df, seq_len, max_gap, exclude_empty_endpoints=True):
+    """
+    Retourne (filled_scores, is_empty_mask)
+    - filled_scores : score propagé, identique à l'original pour les fenêtres non vides.
+    - is_empty_mask : booléen indiquant les fenêtres vides.
+    Les fenêtres vides ne sont pas des endpoints si exclude_empty_endpoints=True.
+    """
     model.eval()
     device = next(model.parameters()).device
     timestamps = pd.to_datetime(df["window_start"])
@@ -178,6 +242,8 @@ def score_timeline(model, X, df, seq_len, max_gap):
     valid_endpoints = []
     for i in range(seq_len - 1, len(X)):
         if np.any(has_gap[i - seq_len + 2 : i + 1]):
+            continue
+        if exclude_empty_endpoints and is_empty[i]:
             continue
         valid_endpoints.append(i)
     valid_endpoints = np.array(valid_endpoints, dtype=int)
@@ -195,6 +261,7 @@ def score_timeline(model, X, df, seq_len, max_gap):
                 probs = torch.sigmoid(logits).cpu().numpy()
             scores_full[batch_idx] = probs
 
+    # Propagation du dernier score valide, fenêtres vides = 0.5 (neutre)
     last_valid = 0.5
     filled = np.full(len(X), 0.5, dtype=np.float64)
     for i in range(len(X)):
@@ -204,14 +271,17 @@ def score_timeline(model, X, df, seq_len, max_gap):
             last_valid = scores_full[i]
             filled[i] = last_valid
         elif is_empty[i]:
-            filled[i] = last_valid if last_valid > 0.5 else 0.5
+            filled[i] = 0.5   # Correction : neutre, pas le dernier score valide
         else:
             filled[i] = last_valid
-    return filled
+
+    return filled, is_empty
+
 
 # ---------- Caches ----------
 artifacts_cache = {}
 computed_cache = {}
+
 
 def load_artifacts(model_day: str):
     if model_day in artifacts_cache:
@@ -256,71 +326,74 @@ def load_artifacts(model_day: str):
         "feature_names": config["feature_names"],
     }
 
+
 def compute_scores(model_day: str, data_day: str, test: bool = False):
     if data_day not in VALIDATION_DAYS:
         raise HTTPException(400, f"Unknown validation day: {data_day}. Allowed: {VALIDATION_DAYS}")
     load_artifacts(model_day)
     art = artifacts_cache[model_day]
-    if test == True:
+
+    if test:
         X = pd.read_parquet(DATA_DIR / f"X_timeline_test_{data_day}.parquet").values.astype(np.float32)
         df = pd.read_parquet(DATA_DIR / f"df_timeline_test_{data_day}.parquet")
     else:
         X = pd.read_parquet(DATA_DIR / f"X_timeline_{data_day}.parquet").values.astype(np.float32)
         df = pd.read_parquet(DATA_DIR / f"df_timeline_{data_day}.parquet")
+
     X_imp = art["imputer"].transform(X)
     X_clip = np.clip(X_imp, art["clip_lower"], art["clip_upper"])
     X_scaled = art["scaler"].transform(X_clip).astype(np.float32)
     X_scaled = np.nan_to_num(X_scaled, nan=0.0, posinf=0.0, neginf=0.0)
-    scores = score_timeline(art["model"], X_scaled, df, SEQ_LEN, MAX_GAP_S)
+
+    scores_raw, is_empty = score_timeline(
+        art["model"], X_scaled, df, SEQ_LEN, MAX_GAP_S,
+        exclude_empty_endpoints=True      # <-- corrigé : exclut les endpoints vides
+    )
+
     cal = art["calibrator"]
     if isinstance(cal, tuple):
         mode, cal_obj = cal
         if mode != "raw" and cal_obj is not None:
-            calibrated = cal_obj.predict(scores)
+            calibrated = cal_obj.predict(scores_raw)
         else:
-            calibrated = scores
+            calibrated = scores_raw
     elif isinstance(cal, IsotonicRegression):
-        calibrated = cal.predict(scores)
+        calibrated = cal.predict(scores_raw)
     else:
-        calibrated = scores
-    if test == True:
-        computed_cache[(model_day, data_day, True)] = {
-            "df": df,
-            "scores_calibrated": np.nan_to_num(calibrated, nan=0.5),
-            "model_day": model_day,
-            "data_day": data_day,
-        }
-    else:
-        computed_cache[(model_day, data_day)] = {
-            "df": df,
-            "scores_calibrated": np.nan_to_num(calibrated, nan=0.5),
-            "model_day": model_day,
-            "data_day": data_day,
-        }
+        calibrated = scores_raw
+
+    # Neutralisation : fenêtres vides → score 0.0 (comme dans le notebook corrigé)
+    calibrated[is_empty] = 0.0
+    calibrated = np.nan_to_num(calibrated, nan=0.5)
+
+    computed_cache[(model_day, data_day, test)] = {
+        "df": df,
+        "scores_calibrated": calibrated,
+        "model_day": model_day,
+        "data_day": data_day,
+    }
+
 
 def get_demo_data(model_day: str, data_day: str, test: bool = False):
     if data_day not in VALIDATION_DAYS:
         raise HTTPException(400, f"Unknown validation day: {data_day}. Allowed: {VALIDATION_DAYS}")
-    if test == True:
-        key = (model_day, data_day, True)
-    else:
-        key = (model_day, data_day)
+    key = (model_day, data_day, test)
     data = computed_cache.get(key)
     if data is None:
         raise HTTPException(
             404,
-            f"Scores not computed yet for model={model_day} on data={data_day}. "
+            f"Scores not computed yet for model={model_day} on data={data_day} (test={test}). "
             f"Please call POST /precompute?model={model_day}&day={data_day} first."
         )
     art = artifacts_cache[model_day]
     return data, art
 
+
 def safe_confusion(y_true_col, y_pred):
-    """Retourne la matrice de confusion si la colonne existe, sinon None."""
     if y_true_col is None:
         return None
-    tp = int(((y_pred==1) & (y_true_col==1)).sum())
-    fp = int(((y_pred==1) & (y_true_col==0)).sum())
-    fn = int(((y_pred==0) & (y_true_col==1)).sum())
-    tn = int(((y_pred==0) & (y_true_col==0)).sum())
+    tp = int(((y_pred == 1) & (y_true_col == 1)).sum())
+    fp = int(((y_pred == 1) & (y_true_col == 0)).sum())
+    fn = int(((y_pred == 0) & (y_true_col == 1)).sum())
+    tn = int(((y_pred == 0) & (y_true_col == 0)).sum())
     return {"TP": tp, "FP": fp, "FN": fn, "TN": tn}
