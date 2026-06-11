@@ -132,7 +132,8 @@ async def timeline(model: str = Query(...), day: str = Query(...)):
                                   art["k_consecutive"], art["smoothing_window_s"],
                                   art["cooldown_s"], df)
     alert_idxs = np.where(early["alerts"] == 1)[0].tolist()
-    alert_data = [TimelineAlert(index=idx, timestamp=timestamps[idx], score=scores[idx])
+    # Utiliser les scores lissés pour les alertes
+    alert_data = [TimelineAlert(index=idx, timestamp=timestamps[idx], score=smoothed[idx])
                   for idx in alert_idxs]
 
     return TimelineResponse(
