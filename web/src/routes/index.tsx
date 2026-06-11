@@ -39,7 +39,7 @@ function RouteComponent() {
       });
       processingModalState.close();
       navigate({
-        to: "/dashboard",
+        to: "/dashboard/timeline",
         search: {
           model: formik.values.model,
           day: formik.values.day,
