@@ -162,6 +162,15 @@ function SimulationTimeline({
             </Badge>
           </Badge.Anchor>
 
+          <div className="flex items-center gap-[0.5rem]">
+            <Chip size="lg" className="bg-surface border border-border">
+              K = {alertK}
+            </Chip>
+            <Chip size="lg" className="bg-surface border border-border">
+              Cooldown = {cooldown}s
+            </Chip>
+          </div>
+
           <Button
             onPress={() => {
               const nextPoint = simulation.points[index - 1];
