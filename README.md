@@ -8,8 +8,6 @@ An demo GUI for the TemporalDDOSNet AI Model
 # 📌 Contents
 
 - [Tech stack](#tech-stack)
-  - [App](#app)
-  - [Server & AI Model](#server--ai-model)
 - [App](#app)
 
 # Tech stack
